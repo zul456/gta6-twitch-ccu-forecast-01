@@ -165,11 +165,18 @@ def forecast_case(case):
     known = case.get("known") or []
     first = next((k for k in known if k.get("hour") == 1), None)
     if first is None:
-        raise ValueError("no hour-1 print")
-    p1 = first.get("viewers")
-    if not isinstance(p1, (int, float)) or p1 < 1:
-        p1 = 1
-    p1 = float(p1)
+        # No hour-1 print: use the last valid minute-history point as the anchor
+        # instead of failing outright (the baseline fallback still catches the
+        # case if the history is empty too).
+        history = [p for p in (case.get("history") or []) if isinstance(p.get("viewers"), (int, float)) and p["viewers"] >= 1]
+        if not history:
+            raise ValueError("no hour-1 print")
+        p1 = float(history[-1]["viewers"])
+    else:
+        p1 = first.get("viewers")
+        if not isinstance(p1, (int, float)) or p1 < 1:
+            p1 = 1
+        p1 = float(p1)
     log_p1 = math.log(p1)
     rolling_case = 1.0 if case_is_rolling(case) else 0.0
 
@@ -283,6 +290,10 @@ def main():
                 v = first.get("viewers")
                 if isinstance(v, (int, float)) and v >= 1:
                     p1 = float(v)
+            if p1 == 1.0:
+                history = [p for p in (case.get("history") or []) if isinstance(p.get("viewers"), (int, float)) and p["viewers"] >= 1]
+                if history:
+                    p1 = float(history[-1]["viewers"])
             forecast = {
                 "hours": [
                     {"hour": row["hour"], "q": baseline_quantiles(p1, row["hour"])}
